@@ -30,13 +30,31 @@ async function run() {
     // Services API
     app.get('/services', async (req, res) => {
       const email = req.query.email;
+      const search = req.query.search;
+
       let query = {};
+
       if (email) {
-        query = { userEmail: email };
+        query.userEmail = email;
       }
-      const cursor = servicesCollection.find(query);
-      const result = await cursor.toArray();
-      res.send(result);
+
+      if (search) {
+        const searchRegex = new RegExp(search, 'i');
+        query.$or = [
+          { serviceTitle: searchRegex },
+          { companyName: searchRegex },
+          { category: searchRegex }
+        ];
+      }
+
+      try {
+        const cursor = servicesCollection.find(query);
+        const result = await cursor.toArray();
+        res.send(result);
+      } catch (err) {
+        console.error('Error fetching services:', err);
+        res.status(500).send({ error: 'Failed to fetch services' });
+      }
     });
 
     app.get('/services/:id', async (req, res) => {
@@ -46,18 +64,16 @@ async function run() {
       res.send(result);
     });
 
-    // ✅ NEW: Delete service by ID
+    app.post('/services', async (req, res) => {
+      const newService = req.body;
+      const result = await servicesCollection.insertOne(newService);
+      res.send(result);
+    });
+
     app.delete('/services/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await servicesCollection.deleteOne(query);
-      res.send(result); // 
-    });
-    
-
-    app.post('/services', async (req, res) => {
-      const newService = req.body;
-      const result = await servicesCollection.insertOne(newService);
       res.send(result);
     });
 
@@ -122,7 +138,7 @@ async function run() {
         newCount = service.applicationCount + 1;
       }
 
-      const updateResult = await servicesCollection.updateOne(query, {
+      await servicesCollection.updateOne(query, {
         $set: { applicationCount: newCount }
       });
 
