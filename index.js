@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 const app = express();
 require('dotenv').config();
 const port = process.env.PORT || 5000;
@@ -15,8 +17,28 @@ const client = new MongoClient(uri, {
   }
 });
 
-app.use(cors());
+app.use(cors({
+  origin:['http://localhost:5174'],
+  credentials: true
+}));
 app.use(express.json());
+app.use(cookieParser());
+
+const verifyToken = (req,res,next) =>{
+  const token = req.cookies?.token;
+  if(!token) {
+    return res.status(401).send({message:'unauthorized access'})
+  }
+  jwt.verify(token,process.env.ACCESS_TOKEN_SECRET,(err,decoded) =>{
+    if (err){
+      return res.status(401).send({message:'unauthorized access'})
+    }
+    
+    next();
+  })
+ 
+}
+
 
 async function run() {
   try {
@@ -26,6 +48,27 @@ async function run() {
 
     const servicesCollection = client.db('serviceReview').collection('services');
     const serviceApplicationCollection = client.db('serviceReview').collection('service-application');
+
+    // Auth Related API 
+    app.post('/jwt',(req,res) =>{
+      const user = req.body;
+      const token = jwt.sign(user,process.env.ACCESS_TOKEN_SECRET,{
+        expiresIn: '1h' });
+     res.cookie('token',token,{
+      httpOnly:true,
+      secure:false,
+     })
+     .send({success:true})
+    });
+
+    app.post('/logout',(req,res)=>{
+      res.clearCookie('token',{
+        httpOnly:true,
+        secure: false
+      })
+      .send({success:true})
+    })
+
 
     // Services API
     app.get('/services', async (req, res) => {
@@ -78,8 +121,9 @@ async function run() {
     });
 
     // Service Application APIs
-    app.get('/service-application', async (req, res) => {
+    app.get('/service-application',verifyToken, async (req, res) => {
       const email = req.query.email;
+      // console.log(req.cookies?.token)
       const query = { applicant_email: email };
       const result = await serviceApplicationCollection.find(query).toArray();
 
