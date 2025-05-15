@@ -18,7 +18,7 @@ const client = new MongoClient(uri, {
 });
 
 app.use(cors({
-  origin:['http://localhost:5174'],
+  origin:['http://localhost:5173'],
   credentials: true
 }));
 app.use(express.json());
@@ -33,7 +33,8 @@ const verifyToken = (req,res,next) =>{
     if (err){
       return res.status(401).send({message:'unauthorized access'})
     }
-    
+    req.user = decoded;
+
     next();
   })
  
@@ -121,38 +122,42 @@ async function run() {
     });
 
     // Service Application APIs
-    app.get('/service-application',verifyToken, async (req, res) => {
-      const email = req.query.email;
-      // console.log(req.cookies?.token)
-      const query = { applicant_email: email };
-      const result = await serviceApplicationCollection.find(query).toArray();
-
-      const enrichedResults = await Promise.all(
-        result.map(async (application) => {
-          const serviceId = application.service_id;
-          if (!serviceId) return application;
-
-          try {
-            const service = await servicesCollection.findOne({ _id: new ObjectId(serviceId) });
-            if (service) {
-              application.serviceTitle = service.serviceTitle;
-              application.companyName = service.companyName;
-              application.serviceImage = service.serviceImage;
-              application.category = service.category;
-              application.applicationCount = service.applicationCount || 0;
-            } else {
-              console.warn(`Service not found for ID: ${serviceId}`);
-            }
-          } catch (err) {
-            console.error(`Error fetching service for ID ${serviceId}:`, err.message);
-          }
-
-          return application;
-        })
-      );
-
-      res.send(enrichedResults);
+    app.get('/service-application/:id',  async (req, res) => {
+      const id = req.params.id;
+      console.log("🔍 Requested ID:", id);
+    
+      try {
+        const application = await servicesCollection.findOne({ _id: new ObjectId(id) });
+    
+        if (!application) {
+          console.log("⚠️ No application found");
+          return res.status(404).send({ message: 'Application not found' });
+        }
+    
+        console.log("✅ Found application:", application);
+    
+        // if (req.user.email !== application.applicant_email) {
+        //   console.log("⛔ Email mismatch:", req.user.email, application.applicant_email);
+        //   return res.status(403).send({ message: 'Forbidden' });
+        // }
+    
+        const service = await servicesCollection.findOne({ _id: new ObjectId(application.service_id) });
+    
+        if (service) {
+          application.serviceTitle = service.serviceTitle;
+          application.serviceImage = service.serviceImage;
+          application.companyName = service.companyName;
+          application.category = service.category;
+        }
+    
+        res.send(application);
+    
+      } catch (err) {
+        console.error('', err.message);
+        res.status(500).send({ error: 'Internal server error' });
+      }
     });
+    
 
     app.get('/service-application/services/:service_id', async (req, res) => {
       const serviceId = req.params.service_id;
